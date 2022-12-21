@@ -184,6 +184,7 @@ def main():
       
       outfile = outpath + filename.split('.')[0]+"_"+f'{imember+1:03d}'+"."+filename.split('.')[1]
       dsemi.to_netcdf(path=outfile,mode='w') 
+      dsemi.close()
 
 if __name__ == "__main__":
     main()
