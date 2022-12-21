@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 
 #"""
-#Build grib files with smooth noise and time correlation
+#Make some smooth noise...
 #"""
 
 import os
-import scipy
-import numpy
+import scipy as sp
+import numpy as np
 import math
-import metview as mv
-
+import xarray as xr
+import yaml as ym
+import argparse
 
 from scipy import signal, ndimage 
-
 from matplotlib import pyplot
 
 
@@ -24,7 +24,7 @@ def gamma_scaled(err,size):
 
     s=err**2
     a=1/s
-    GAMMA=numpy.random.gamma(a,s,size)
+    GAMMA=np.random.gamma(a,s,size)
     return GAMMA
 
 def BuildRandomSample(err,nlon,nlat,width) :
@@ -41,17 +41,17 @@ def BuildRandomSample(err,nlon,nlat,width) :
 
     ndim = rnlat * rnlon
     
-    m = gamma_scaled(err, ndim).T 
+    m = gamma_scaled(math.e*err, ndim).T 
 
-    m = numpy.reshape(m, (rnlat,rnlon))    
+    m = np.reshape(m, (rnlat,rnlon))    
 
-    x=numpy.arange(0,rnlat,float(rnlat)/nlat)[0:nlat]
-    rx=numpy.arange(rnlat)
-    y=numpy.arange(0,rnlon,float(rnlon)/nlon)[0:nlon]
-    ry=numpy.arange(rnlon) 
+    x=np.arange(0,rnlat,float(rnlat)/nlat)[0:nlat]
+    rx=np.arange(rnlat)
+    y=np.arange(0,rnlon,float(rnlon)/nlon)[0:nlon]
+    ry=np.arange(rnlon) 
 
-    xx,yy = numpy.meshgrid(rx,ry)  
-    f = scipy.interpolate.RectBivariateSpline(rx,ry,m,kx=1,ky=1)
+    xx,yy = np.meshgrid(rx,ry)  
+    f = sp.interpolate.RectBivariateSpline(rx,ry,m,kx=1,ky=1)
     m = f(x,y)
 
     #
@@ -69,8 +69,7 @@ def Kernel(n, sigma, nd=1):
   #
   # Creation of the kernel
   #
-  #k = scipy.signal.gaussian(n,sigma);
-  k = scipy.signal.gaussian(n,sigma)
+  k = sp.signal.gaussian(n,sigma)
   for i in range(nd-1): k = k*k[:,None]
   k=k**0.5
   #normalize by the integral to keep the average close to 1
@@ -89,7 +88,7 @@ def Smooth(x, sigmax):
   # Initialisation of the size of the window (3x2sigma)
   #
   sigma = sigmax
-  wlength = int(numpy.ceil(sigma * 6))
+  wlength = int(np.ceil(sigma * 6))
   #
   # Creation of the kernel
   #
@@ -112,7 +111,7 @@ def BuildMemberPert (imember,err, sigmax, nlon, nlat) :
     #
     sample = BuildRandomSample(err,nlon, nlat, 2 * sigmax) 
     #
-    data = numpy.reshape(sample, (nlat,nlon))
+    data = np.reshape(sample, (nlat,nlon))
     out = Smooth(data, sigmax)
     #
     # Retun
@@ -124,42 +123,67 @@ def BuildMemberPert (imember,err, sigmax, nlon, nlat) :
 # MAIN
 #-------------------------------------------------
 #
-if __name__ == "__main__":
-    #
-    # User input
-    #
-    # 
-    gribtable=216
-    spec="CO"
-    ltyp=      ['agr' , 'res' , 'eif', 'shp' , 'swd' , 'tra' , 'bio' , 'fire']
-    lgribno=   [ 101  ,  102  ,  103 ,  104  ,  105  ,  106  ,  107  ,  108  ] 
-    lerr =     [  1.5 , 0.75  ,  0.5 ,  0.75 , 0.4   , 1.0   ,  0.3  , 1.0   ] #relative error in the random noise
-    lsigmax  = [   5  ,     5,      5,    15 ,   5   ,   5   ,  15   ,  2    ] # 2D grid points correlation 50km per cell
-    members = 50 
-    #
-    # Read dummy field
-    #
-    dummy = mv.read("dummy.grib")
-    nlon = int(dummy[0].grib_get_long("Ni"))
-    nlat = int(dummy[0].grib_get_long("Nj"))
-    #
-    # Loop over the members and the sectors
-    #
+def main():
 
-    for typ,gribno,err,sigmax in zip(ltyp,lgribno,lerr,lsigmax):
-     print(typ,gribno,err,sigmax)
-     outpath="/scratch/cx/cxjb/EDA_SFC_PERT/"+spec+"/"+typ+"/"
-     if not os.path.exists(outpath): os.makedirs(outpath)
+    parser = argparse.ArgumentParser(
+        description=(
+            'NOISE SMOOTHER: Create initial emission perturbations using gamma pdfs')
+    )
 
-     for imember in range(members) : 
-      print(imember)
+    required = parser.add_argument_group(title='required arguments')
+    required.add_argument(
+        '-i', '--yaml_file',
+        help="yaml input file",
+        type=str, required=True)
+
+    args = parser.parse_args()
+    ymlist = ym.load(open(args.yaml_file),Loader=ym.FullLoader)
+
+    filename = ymlist["emission file"]
+    varlist = ymlist["sector list"]
+    errmagn = ymlist["sector pert"]
+    hcorlen = ymlist["sector hcor"]
+    geodims = ymlist["geo dims"]
+    timedim = ymlist["time dim"]
+    members = ymlist["members"]
+    issfout = ymlist["scaling factors out"]
+    outpath = ymlist["outpath"]
+    inpath = ymlist["inpath"]
+    domain = ymlist["domain"]
+    if domain != "global":
+       print("not ready yet for limited area files")
+       exit()
+
+    if not os.path.exists(outpath): os.makedirs(outpath)
+
+    #open/read/write/close for each member to avoid adding perturbations 
+    for imember in range(members) :
+
+      dsemi = xr.open_dataset(inpath+filename)
+       
+      nlon = int(np.shape(dsemi[geodims[0]])[0])
+      nlat = int(np.shape(dsemi[geodims[1]])[0])
+      ntime = int(np.shape(dsemi[timedim])[0])
+
+      #get the cell size at equator
+      res = 40075 / nlon
+      print(nlon,nlat)
+
+      #
+      # Loop over the sectors
+      #
+      for var,err,hcor in zip(varlist,errmagn,hcorlen):
+        hcor_gp = hcor / res
+        print(var, err, hcor, hcor_gp)
       
-      scale=2.7 #2.7 is the factor to account for smoothing effect during the convolution, it seems it converges to that number for any err and sigma values
-      out = BuildMemberPert (imember, scale*err, sigmax, nlon, nlat)
+        scal_fac = BuildMemberPert(imember, err, hcor_gp, nlon, nlat)
+        scal_fac = np.float32(np.repeat(scal_fac[np.newaxis, :, :], ntime, axis=0)) # need to generalize this
+        dsemi[var].values = dsemi[var].values * scal_fac
+        if issfout:
+          dsemi[var+"_scalfac"] = ([timedim, geodims[1], geodims[0]], scal_fac)
+      
+      outfile = outpath + filename.split('.')[0]+"_"+f'{imember+1:03d}'+"."+filename.split('.')[1]
+      dsemi.to_netcdf(path=outfile,mode='w') 
 
-      new = dummy.set_values(numpy.reshape(out, (nlat*nlon)))
-      new = new.grib_set_long(['paramId', int(1000*gribtable+gribno)])
-
-      filename = "pert_m%3.3i_%s_%s.grib" % (imember+1,spec,typ)
-      filename = os.path.join(outpath, filename)
-      mv.write(filename, new)
+if __name__ == "__main__":
+    main()
