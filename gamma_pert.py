@@ -13,7 +13,7 @@ import yaml as ym
 import argparse
 
 from scipy import signal, ndimage 
-from matplotlib import pyplot
+#from matplotlib import pyplot
 
 
 def gamma_scaled(err,size):
@@ -33,7 +33,7 @@ def BuildRandomSample(err,nlon,nlat,width) :
     width 2*sigmax (otherwise spread will be smoothed too much to an average value)
     """
     #
-    # Build the sample 
+    print("BuildRandomSample start")
     #
 
     rnlat=int(nlat/width)
@@ -55,66 +55,64 @@ def BuildRandomSample(err,nlon,nlat,width) :
     m = f(x,y)
 
     #
-    # Return 
+    print("BuildRandomSample end")
     #
     return m
 
 def Kernel(n, sigma, nd=1):
-  '''
-  Generates n-dimensional Gaussian kernel
-  n : Number of points in the output window.
-  sigma: The standard deviation,
-  nd: dimension of the kernel
-  '''
-  #
-  # Creation of the kernel
-  #
-  k = sp.signal.gaussian(n,sigma)
-  for i in range(nd-1): k = k*k[:,None]
-  k=k**0.5
-  #normalize by the integral to keep the average close to 1
-  k=k/k.sum()
+    '''
+    Generates n-dimensional Gaussian kernel
+    n : Number of points in the output window.
+    sigma: The standard deviation,
+    nd: dimension of the kernel
+    '''
+    #
+    print("Kernel start")
+    #
+    k = sp.signal.windows.gaussian(n,sigma)
+    for i in range(nd-1): k = k*k[:,None]
+    k=k**0.5
+    #normalize by the integral to keep the average close to 1
+    k=k/k.sum()
 
-  #
-  # Return
-  #
-  return k
+    #
+    print("Kernel end")
+    #
+    return k
 
 def Smooth(x, sigmax):
-  '''
-  Applies smoothing on n-dimensional data x
-  '''
-  #
-  # Initialisation of the size of the window (3x2sigma)
-  #
-  sigma = sigmax
-  wlength = int(np.ceil(sigma * 6))
-  #
-  # Creation of the kernel
-  #
-  knl = Kernel(n=wlength,sigma=sigma,nd=x.ndim)
-  #
-  # Apply kernel
-  #
-  y = ndimage.convolve(x,knl, mode="wrap")
-  #
-  # Return
-  #
-  return y
+    '''
+    Applies smoothing on n-dimensional data x
+    '''
+    #
+    print("Smooth start")
+    #
+    sigma = sigmax
+    wlength = int(np.ceil(sigma * 6))
+    knl = Kernel(n=wlength,sigma=sigma,nd=x.ndim)
+    #
+    print("Apply kernel")
+    #
+    #y = ndimage.convolve(x,knl, mode="wrap")
+    y = signal.fftconvolve(x, knl, mode='same')
+    #
+    print("Smooth end")
+    #
+    return y
 
 
 def BuildMemberPert (imember,err, sigmax, nlon, nlat) : 
     """
     """
     #
-    # Build the time correlated smaple
+    print("BuildMemberPert start")
     #
     sample = BuildRandomSample(err,nlon, nlat, 2 * sigmax) 
     #
     data = np.reshape(sample, (nlat,nlon))
     out = Smooth(data, sigmax)
     #
-    # Retun
+    print("BuildMemberPert end")
     #  
     return out
 
@@ -139,14 +137,17 @@ def main():
     args = parser.parse_args()
     ymlist = ym.load(open(args.yaml_file),Loader=ym.FullLoader)
 
-    filename = ymlist["emission file"]
-    varlist = ymlist["sector list"]
+    template = ymlist["template file"]
+    filenames = ymlist["emission files"]
+    spelist = ymlist["species list"] 
+    seclist = ymlist["sector list"]
     errmagn = ymlist["sector pert"]
     hcorlen = ymlist["sector hcor"]
     geodims = ymlist["geo dims"]
     timedim = ymlist["time dim"]
     members = ymlist["members"]
     issfout = ymlist["scaling factors out"]
+    pertoly = ymlist["only scaling"]
     outpath = ymlist["outpath"]
     inpath = ymlist["inpath"]
     domain = ymlist["domain"]
@@ -159,11 +160,11 @@ def main():
     #open/read/write/close for each member to avoid adding perturbations 
     for imember in range(members) :
 
-      dsemi = xr.open_dataset(inpath+filename)
+      dstpl = xr.open_dataset(inpath+template)
        
-      nlon = int(np.shape(dsemi[geodims[0]])[0])
-      nlat = int(np.shape(dsemi[geodims[1]])[0])
-      ntime = int(np.shape(dsemi[timedim])[0])
+      nlon = int(np.shape(dstpl[geodims[0]])[0])
+      nlat = int(np.shape(dstpl[geodims[1]])[0])
+      ntime = int(np.shape(dstpl[timedim])[0])
 
       #get the cell size at equator
       res = 40075 / nlon
@@ -172,19 +173,44 @@ def main():
       #
       # Loop over the sectors
       #
-      for var,err,hcor in zip(varlist,errmagn,hcorlen):
+      for sec,err,hcor in zip(seclist,errmagn,hcorlen):
         hcor_gp = hcor / res
-        print(var, err, hcor, hcor_gp)
+        print(sec, err, hcor, hcor_gp)
       
         scal_fac = BuildMemberPert(imember, err, hcor_gp, nlon, nlat)
         scal_fac = np.float32(np.repeat(scal_fac[np.newaxis, :, :], ntime, axis=0)) # need to generalize this
-        dsemi[var].values = dsemi[var].values * scal_fac
-        if issfout:
-          dsemi[var+"_scalfac"] = ([timedim, geodims[1], geodims[0]], scal_fac)
-      
-      outfile = outpath + filename.split('.')[0]+"_"+f'{imember+1:03d}'+"."+filename.split('.')[1]
-      dsemi.to_netcdf(path=outfile,mode='w') 
-      dsemi.close()
+        for spe, efile in zip(spelist,filenames):
+
+            file_parts = efile.split('.')
+            base_name = '.'.join(file_parts[:-1])
+            extension = file_parts[-1]
+            new_filename = f"{base_name}_pert{imember+1:03d}.{extension}"
+            outfile = outpath + new_filename
+            #outfile = outpath + efile.split('.')[:-2]+"_"+f'pert{imember+1:03d}'+"."+efile.split('.')[-1]
+            encoding={}
+            if os.path.isfile(outfile):
+                dsemi = xr.open_dataset(outfile)
+            else:
+                dsemi = xr.open_dataset(inpath+efile)
+            var = f'{spe}{sec}'
+            print(f' writing {var}')
+            if pertoly:
+                dsemi = dsemi.drop_vars(var)
+            else:
+                dsemi[var].values = dsemi[var].values * scal_fac
+            if issfout:
+                dsemi[var+"_pert"] = ([timedim, geodims[1], geodims[0]], scal_fac)
+                encoding = {var+"_pert": {'zlib': True, 'complevel': 5, 'chunksizes': (100, 100, 100)}}
+
+            # Write to a temporary file first
+            temp_outfile = outfile + '.tmp'
+            dsemi.to_netcdf(path=temp_outfile, encoding=encoding, mode='w')
+    
+            # Close the dataset to ensure all changes are written
+            dsemi.close()
+    
+            # Rename the temporary file to the final output file
+            os.rename(temp_outfile, outfile)
 
 if __name__ == "__main__":
     main()
