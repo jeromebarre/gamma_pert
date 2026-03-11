@@ -1,5 +1,8 @@
 # Perturbator - Emission Perturbation Generator
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 A Python tool for generating spatially-correlated random perturbations for emission fields, designed for ensemble data assimilation applications.
 
 ## Overview
@@ -260,6 +263,26 @@ The tool supports standard CEDS emission sectors
 ## Author
 
 Jerome Barre
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+## Citation
+
+If you use this software in your research, please cite it:
+
+```bibtex
+@software{barre_perturbator_2026,
+  author       = {Barre, Jerome},
+  title        = {Perturbator: Emission Perturbation Generator},
+  year         = {2026},
+  publisher    = {Zenodo},
+  version      = {v1.0.0},
+  doi          = {10.5281/zenodo.XXXXXXX},
+  url          = {https://doi.org/10.5281/zenodo.XXXXXXX}
+}
+```
 
 ## References
 
