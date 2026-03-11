@@ -129,6 +129,8 @@ def main():
     )
 
     required = parser.add_argument_group(title='required arguments')
+
+
     required.add_argument(
         '-i', '--yaml_file',
         help="yaml input file",
@@ -139,7 +141,7 @@ def main():
 
     template = ymlist["template file"]
     filenames = ymlist["emission files"]
-    spelist = ymlist["species list"] 
+    spelist = ymlist["species list"]
     seclist = ymlist["sector list"]
     errmagn = ymlist["sector pert"]
     hcorlen = ymlist["sector hcor"]
@@ -157,60 +159,80 @@ def main():
 
     if not os.path.exists(outpath): os.makedirs(outpath)
 
-    #open/read/write/close for each member to avoid adding perturbations 
     for imember in range(members) :
 
       dstpl = xr.open_dataset(inpath+template)
-       
+
       nlon = int(np.shape(dstpl[geodims[0]])[0])
       nlat = int(np.shape(dstpl[geodims[1]])[0])
       ntime = int(np.shape(dstpl[timedim])[0])
-
-      #get the cell size at equator
       res = 40075 / nlon
       print(nlon,nlat)
 
-      #
-      # Loop over the sectors
-      #
+      # CHANGED: Instead of writing files each time, keep them in memory until all changes are done.
+      ds_dict = {}  # CHANGED: Dictionary to hold datasets in memory
+
+      # CHANGED: Load all datasets once before modifications
+      for spe, efile in zip(spelist, filenames):  # CHANGED: Moved this block before sector loop
+          file_parts = efile.split('.')
+          base_name = '.'.join(file_parts[:-1])
+          extension = file_parts[-1]
+          new_filename = f"{base_name}_pert{imember+1:03d}.{extension}"
+          outfile = outpath + new_filename
+
+          if os.path.isfile(outfile):
+              dsemi = xr.open_dataset(outfile)
+          else:
+              dsemi = xr.open_dataset(inpath+efile)
+
+          if dsemi.dims[timedim] != ntime:
+              raise ValueError(f"Expected {ntime} time steps in {outfile}, found {dsemi.dims[timedim]}")
+
+          ds_dict[outfile] = dsemi
+
       for sec,err,hcor in zip(seclist,errmagn,hcorlen):
         hcor_gp = hcor / res
         print(sec, err, hcor, hcor_gp)
-      
-        scal_fac = BuildMemberPert(imember, err, hcor_gp, nlon, nlat)
-        scal_fac = np.float32(np.repeat(scal_fac[np.newaxis, :, :], ntime, axis=0)) # need to generalize this
-        for spe, efile in zip(spelist,filenames):
 
+        scal_fac_list = []  
+        for itime in range(ntime):
+            hour_field = BuildMemberPert(imember, err, hcor_gp, nlon, nlat)
+            scal_fac_list.append(hour_field)
+        scal_fac = np.float32(np.array(scal_fac_list))
+
+        # CHANGED: Apply changes to ds_dict datasets in memory
+        for spe, efile in zip(spelist,filenames):
             file_parts = efile.split('.')
             base_name = '.'.join(file_parts[:-1])
             extension = file_parts[-1]
             new_filename = f"{base_name}_pert{imember+1:03d}.{extension}"
             outfile = outpath + new_filename
-            #outfile = outpath + efile.split('.')[:-2]+"_"+f'pert{imember+1:03d}'+"."+efile.split('.')[-1]
-            encoding={}
-            if os.path.isfile(outfile):
-                dsemi = xr.open_dataset(outfile)
-            else:
-                dsemi = xr.open_dataset(inpath+efile)
+            dsemi = ds_dict[outfile]
+
             var = f'{spe}{sec}'
             print(f' writing {var}')
             if pertoly:
-                dsemi = dsemi.drop_vars(var)
+                if var in dsemi:
+                    dsemi = dsemi.drop_vars(var)
             else:
                 dsemi[var].values = dsemi[var].values * scal_fac
             if issfout:
+                # CHANGED: Just set variable here in memory
                 dsemi[var+"_pert"] = ([timedim, geodims[1], geodims[0]], scal_fac)
-                encoding = {var+"_pert": {'zlib': True, 'complevel': 5, 'chunksizes': (100, 100, 100)}}
 
-            # Write to a temporary file first
-            temp_outfile = outfile + '.tmp'
-            dsemi.to_netcdf(path=temp_outfile, encoding=encoding, mode='w')
-    
-            # Close the dataset to ensure all changes are written
-            dsemi.close()
-    
-            # Rename the temporary file to the final output file
-            os.rename(temp_outfile, outfile)
+            ds_dict[outfile] = dsemi
+
+      # CHANGED: After all modifications, write out once with compression
+      for outfile, dsemi in ds_dict.items():
+          encoding = {}
+          for var_name in dsemi.data_vars:
+              if issfout or var_name not in [f'{spe}{sec}' for spe in spelist for sec in seclist if pertoly]:
+                  encoding[var_name] = {'zlib': True, 'complevel': 5, 'shuffle': True, 'chunksizes': (24, 360, 180)}  # CHANGED: Apply compression here
+
+          temp_outfile = outfile + '.tmp'
+          dsemi.to_netcdf(path=temp_outfile, encoding=encoding, mode='w')  # CHANGED: Single write with compression
+          dsemi.close()
+          os.rename(temp_outfile, outfile)
 
 if __name__ == "__main__":
     main()
