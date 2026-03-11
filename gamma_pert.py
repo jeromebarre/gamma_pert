@@ -32,9 +32,8 @@ def BuildRandomSample(err,nlon,nlat,width) :
     Build the random sample at the approximate resolution of the kernel 
     width 2*sigmax (otherwise spread will be smoothed too much to an average value)
     """
-    #
+
     print("BuildRandomSample start")
-    #
 
     rnlat=int(nlat/width)
     rnlon=int(nlon/width)
@@ -53,9 +52,8 @@ def BuildRandomSample(err,nlon,nlat,width) :
     f = sp.interpolate.RectBivariateSpline(rx,ry,m,kx=1,ky=1)
     m = f(x,y)
 
-    #
     print("BuildRandomSample end")
-    #
+
     return m
 
 def Kernel(n, sigma, nd=1):
@@ -65,54 +63,54 @@ def Kernel(n, sigma, nd=1):
     sigma: The standard deviation,
     nd: dimension of the kernel
     '''
-    #
+
     print("Kernel start")
-    #
+
     k = sp.signal.windows.gaussian(n,sigma)
     for i in range(nd-1): k = k*k[:,None]
     k=k**0.5
     #normalize by the integral to keep the average close to 1
     k=k/k.sum()
 
-    #
     print("Kernel end")
-    #
+
     return k
 
 def Smooth(x, sigmax):
     '''
     Applies smoothing on n-dimensional data x
     '''
-    #
+
     print("Smooth start")
-    #
+
     sigma = sigmax
     wlength = int(np.ceil(sigma * 6))
     knl = Kernel(n=wlength,sigma=sigma,nd=x.ndim)
-    #
+
     print("Apply kernel")
-    #
-    #y = ndimage.convolve(x,knl, mode="wrap")
+
+    #y = ndimage.convolve(x,knl, mode="wrap") # 10x slower than fftconvolve
     y = signal.fftconvolve(x, knl, mode='same')
-    #
+
     print("Smooth end")
-    #
+
     return y
 
 
 def BuildMemberPert (imember,err, sigmax, nlon, nlat) : 
     """
+    Build a member perturbation
     """
-    #
+
     print("BuildMemberPert start")
-    #
+
     sample = BuildRandomSample(err,nlon, nlat, 2 * sigmax) 
-    #
+
     data = np.reshape(sample, (nlat,nlon))
     out = Smooth(data, sigmax)
-    #
+
     print("BuildMemberPert end")
-    #  
+
     return out
 
 #

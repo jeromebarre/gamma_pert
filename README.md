@@ -1,14 +1,20 @@
 # Perturbator - Emission Perturbation Generator
 
-A Python tool for generating spatially-correlated random perturbations for atmospheric emission fields, designed for ensemble data assimilation applications.
+A Python tool for generating spatially-correlated random perturbations for emission fields, designed for ensemble data assimilation applications.
 
 ## Overview
 
 The **Perturbator** tool (`gamma_pert.py`) creates smooth, spatially-correlated random perturbation fields using gamma distributions and Gaussian kernel smoothing. This is particularly useful for:
 
-- Generating ensemble members for emission uncertainty quantification
+- Perturbing emission inventories (e.g., CEDS - Community Emissions Data System or any inventory on lat-lon grids)
+- Generating ensemble members for emission uncertainty impact quantification
 - Creating scaling factors for atmospheric chemistry models
-- Perturbing emission inventories (e.g., CEDS - Community Emissions Data System)
+
+### Why Gamma Over Gaussian or Lognormal?
+
+1. **Always positive**: Unlike Gaussian, gamma-scaled never produces negative scaling factors, but unlike log normal doesn't produces overly tailed distributions for low errors/spread distributions.
+2. **Flexible shape**: Single parameterization smoothly transitions between Gaussian-like and lognormal-like
+3. **Simple mean control**: Easy to ensure mean = 1 for unbiased perturbations
 
 ## Features
 
@@ -91,34 +97,20 @@ domain: global
 
 ## Algorithm Details
 
-### 1. Gamma Distribution Sampling (`gamma_scaled`)
+The algorithm generates spatially-correlated perturbation fields in two main steps:
 
-Samples from a gamma distribution with:
-- **Mean = 1** (multiplicative scaling factor)
-- **Standard deviation = err** (specified perturbation magnitude)
+### Step 1: Random Field Generation
 
-The gamma distribution naturally produces positive values, making it suitable for emission scaling factors. The shape transitions from:
-- **Gaussian-like** for low errors (< 30%)
-- **Lognormal-like** for high errors (> 100%)
+The `gamma_scaled` function samples from a gamma distribution parameterized to have **mean = 1** and **standard deviation = σ** (the specified error). The `BuildRandomSample` function creates a 2D random field at reduced resolution (proportional to the correlation length) and upsamples it to the full grid using bilinear interpolation.
 
-### 2. Random Sample Generation (`BuildRandomSample`)
+### Step 2: Spatial Smoothing
 
-1. Creates a coarse random field at reduced resolution (proportional to kernel width)
-2. Samples from the scaled gamma distribution
-3. Upsamples to full resolution using bilinear interpolation
+The `Kernel` and `Smooth` functions apply a normalized 2D Gaussian convolution (via FFT) that:
+- Introduces spatial correlation with the specified length scale
+- **Preserves the mean** (kernel sums to 1)
+- **Preserves the standard deviation** (through proper kernel normalization)
 
-### 3. Gaussian Kernel Smoothing (`Kernel`, `Smooth`)
-
-1. Generates an n-dimensional Gaussian kernel with specified standard deviation
-2. Normalizes the kernel to preserve the mean
-3. Applies FFT-based convolution for efficient smoothing
-
-### 4. Member Perturbation (`BuildMemberPert`)
-
-Combines the random sampling and smoothing steps:
-1. Builds a random sample at appropriate resolution
-2. Applies Gaussian smoothing with the specified correlation length
-3. Returns the final perturbation field
+The `BuildMemberPert` function combines both steps to produce the final perturbation field for each ensemble member and time step.
 
 ## Output Files
 
@@ -182,85 +174,28 @@ This ensures that:
 1. The **average perturbation factor is 1** (no systematic bias in emissions)
 2. The **spread is controlled by the specified error** $\sigma$
 
-### Gaussian Approximation (Low Error Regime)
+For **small errors** ($\sigma < 0.3$), the shape parameter $\alpha = 1/\sigma^2$ becomes large converges to a Gaussian distribution.
 
-For **small errors** ($\sigma < 0.3$), the shape parameter $\alpha = 1/\sigma^2$ becomes large:
-
-| $\sigma$ | $\alpha$ |
-|----------|----------|
-| 0.1 | 100 |
-| 0.2 | 25 |
-| 0.3 | 11.1 |
-
-By the **Central Limit Theorem**, as $\alpha \to \infty$, the gamma distribution converges to a Gaussian:
-
-$$\text{Gamma}(\alpha, \theta) \xrightarrow{\alpha \to \infty} \mathcal{N}(\alpha\theta, \alpha\theta^2) = \mathcal{N}(1, \sigma^2)$$
-
-The **skewness** of the gamma distribution is:
-
-$$\gamma_1 = \frac{2}{\sqrt{\alpha}} = 2\sigma$$
-
-For $\sigma = 0.1$: skewness = 0.2 (nearly symmetric, Gaussian-like)
-For $\sigma = 0.3$: skewness = 0.6 (slightly asymmetric)
-
-### Lognormal Approximation (High Error Regime)
-
-For **large errors** ($\sigma > 1.0$), the shape parameter $\alpha = 1/\sigma^2$ becomes small:
-
-| $\sigma$ | $\alpha$ |
-|----------|----------|
-| 1.0 | 1.0 |
-| 1.5 | 0.44 |
-| 2.0 | 0.25 |
-
-When $\alpha < 1$, the gamma PDF has an asymptote at $x = 0$ and exhibits heavy right-skewness, similar to a lognormal distribution.
-
-The lognormal distribution $\text{LogNormal}(\mu_{\ln}, \sigma_{\ln})$ has:
-
-$$\mathbb{E}[X] = e^{\mu_{\ln} + \sigma_{\ln}^2/2}$$
-$$\text{Var}(X) = (e^{\sigma_{\ln}^2} - 1) e^{2\mu_{\ln} + \sigma_{\ln}^2}$$
-
-For a lognormal with mean = 1 and variance = $\sigma^2$:
-
-$$\mu_{\ln} = -\frac{1}{2}\ln(1 + \sigma^2)$$
-$$\sigma_{\ln} = \sqrt{\ln(1 + \sigma^2)}$$
+For **large errors** ($\sigma > 1.0$), the shape parameter $\alpha = 1/\sigma^2$ becomes small exhibits heavy right-skewness, similar to a lognormal distribution.
 
 Both gamma and lognormal share key properties in this regime:
 - **Strictly positive** values (essential for emission scaling)
 - **Heavy right tail** (allows large positive perturbations)
 - **Mode < Mean < Median** ordering
 
-### Distribution Shape Summary
-
-| Error Regime | $\sigma$ | $\alpha$ | Skewness | Distribution Shape |
-|--------------|----------|----------|----------|-------------------|
-| Low | < 0.3 | > 11 | < 0.6 | ≈ Gaussian (symmetric) |
-| Medium | 0.3 - 1.0 | 1 - 11 | 0.6 - 2.0 | Intermediate |
-| High | > 1.0 | < 1 | > 2.0 | ≈ Lognormal (right-skewed) |
-
-### Why Gamma Over Gaussian or Lognormal?
-
-1. **Always positive**: Unlike Gaussian, gamma never produces negative scaling factors
-2. **Flexible shape**: Single parameterization smoothly transitions between Gaussian-like and lognormal-like
-3. **Simple mean control**: Easy to ensure mean = 1 for unbiased perturbations
-4. **Computational efficiency**: Direct sampling without rejection or transformation
+| Error Regime | $\sigma$ | Skewness | Distribution Shape |
+|--------------|----------|----------|-------------------|
+| Low | < 0.3 | < 0.6 | ≈ Gaussian (symmetric) |
+| Medium | 0.3 - 1.0 | 0.6 - 2.0 | Intermediate |
+| High | > 1.0 | > 2.0 | ≈ Lognormal (right-skewed) |
 
 ### Spatial Correlation
 
-#### Correlation Length Conversion
+#### Correlation Length Scale Definition
 
 The horizontal correlation length is specified in **kilometers** in the YAML configuration (`sector hcor`). The code converts this to grid points using the equatorial Earth circumference:
 
 $$\sigma_{\text{grid}} = \frac{L_h}{R_{\text{eq}}}$$
-
-Where:
-- $L_h$ is the correlation length in km
-- $R_{\text{eq}} = 40075 / n_{\text{lon}}$ is the approximate grid resolution in km at the equator
-- $n_{\text{lon}}$ is the number of longitude grid points
-
-For example, with a 0.5° grid ($n_{\text{lon}} = 720$):
-- Grid resolution at equator: $R_{\text{eq}} \approx 55.7$ km
-- A 500 km correlation length → $\sigma_{\text{grid}} \approx 9$ grid points
 
 #### Gaussian Kernel Formulation
 
@@ -268,11 +203,9 @@ The Gaussian smoothing kernel in 2D is:
 
 $$K(x, y) = \frac{1}{2\pi\sigma^2} \exp\left(-\frac{x^2 + y^2}{2\sigma^2}\right)$$
 
-The kernel is normalized ($\sum K = 1$) to preserve the mean of the perturbation field during convolution. The effective correlation length is approximately:
+The kernel is normalized ($\sum K = 1$) to preserve the mean of the perturbation field during convolution.
 
-$$L_h \approx 2\sigma_{\text{kernel}}$$
-
-#### ⚠️ Polar Singularity Limitation
+#### Polar Singularity Limitation
 
 A kernel with fixed grid-point width represents a much smaller physical distance near the poles. A 500 km correlation at the equator becomes effectively ~250 km at 60°N/S and ~85 km at 80°N/S.
 
@@ -283,36 +216,27 @@ These tools could properly account for the spherical geometry and maintain isotr
 - Model interface implementation (e.g., FV3, MPAS, etc.)
 - More setup complexity
 
-For many practical applications**, especially in the tropics and mid-latitudes where most emissions occur, the simplified lat-lon approach in this tool provides adequate results with minimal setup overhead.
+For many practical applications, especially in the tropics and mid-latitudes where most emissions occur, the simplified lat-lon approach in this tool provides adequate results with minimal setup overhead.
 
-## Examples
 
-### Example 1: Basic NOx Perturbations
+## Example: Multi-Species CEDS Emissions
 
-```yaml
-template file: NOx_emissions.nc
-emission files: [NOx_emissions.nc]
-species list: ['NOx']
-sector list: [_agr, _ene, _tra]
-sector pert: [0.5, 0.3, 0.4]
-sector hcor: [200, 300, 150]
-geo dims: [lon, lat]
-time dim: time
-members: 10
-scaling factors out: True
-only scaling: False
-inpath: ./data/
-outpath: ./output/
-domain: global
-```
+See `input_CEDS_NO.yaml` and `input_CEDS_NO_hourly.yaml` for complete examples with multiple species and CEDS sectors.
 
-### Example 2: Multi-Species CEDS Emissions
+### Example Perturbation Fields
 
-See `input_CEDS_NO.yaml` and `input_CEDS_NO_hourly.yaml` for complete examples with multiple species and all CEDS sectors.
+![Example perturbation fields](Slide1.png)
+
+**Figure 1.** Example perturbation fields showing the effect of correlation length and perturbation magnitude on spatial structure. 
+- **Top row (a, b)**: L=500km, σ=40% — Large correlation length produces broad, smooth perturbation patterns
+- **Middle row (c, d)**: L=200km, σ=55% — Shorter correlation length with higher uncertainty creates finer-scale structure
+- **Bottom row (e, f)**: L=200km, σ=30% — Same correlation length but lower uncertainty reduces the amplitude of perturbations
+
+Each column shows a different ensemble member, demonstrating the random variability between members while maintaining consistent spatial correlation structure. Values represent multiplicative scaling factors centered around 1 (blue < 1, white ≈ 1, red > 1).
 
 ## Emission Sectors
 
-The tool supports standard CEDS emission sectors:
+The tool supports standard CEDS emission sectors
 
 | Sector Code | Description |
 |-------------|-------------|
@@ -324,6 +248,8 @@ The tool supports standard CEDS emission sectors:
 | `_slv` | Solvents |
 | `_tra` | Transportation |
 | `_wst` | Waste |
+
+ but can use other sectors and emisison inventories with just yaml changes.
 
 ## Current Limitations
 

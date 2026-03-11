@@ -1,6 +1,6 @@
 
 
-Anthro SECTORS
+Anthro SECTORS uncertainties from the EMEP estimates
 
 agriculture
 shortname: 
@@ -81,8 +81,8 @@ bio (8)
 Fires SECTOR
 fire (7)
 
-                 GFAS
-                 uncertainty range ?
+                 GFAS-QFED-FINN etc...
+                 uncertainty range ???
                  choose: 100%
                  L=100km
 
