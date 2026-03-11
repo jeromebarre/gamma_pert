@@ -237,6 +237,25 @@ See `input_CEDS_NO.yaml` and `input_CEDS_NO_hourly.yaml` for complete examples w
 
 Each column shows a different ensemble member, demonstrating the random variability between members while maintaining consistent spatial correlation structure. Values represent multiplicative scaling factors centered around 1 (blue < 1, white ≈ 1, red > 1).
 
+### Perturbation Value Distributions
+
+![Perturbation histograms](histos.png)
+
+**Figure 2.** Histograms of perturbation scaling factor values across all ensemble members and grid points for each NO emission sector, using the settings from `input_CEDS_NO_hourly.yaml`. Each panel corresponds to one sector and reflects its configured error statistics:
+
+| Sector | σ | L (km) | Distribution shape |
+|--------|---|--------|--------------------|
+| `NO_agr` | 75% | 500 | Strongly right-skewed (lognormal-like) — high uncertainty, long tail |
+| `NO_ene` | 30% | 200 | Near-symmetric (Gaussian-like) — low uncertainty |
+| `NO_ind` | 30% | 200 | Near-symmetric (Gaussian-like) — low uncertainty |
+| `NO_rco` | 45% | 200 | Moderately skewed — intermediate regime |
+| `NO_shp` | 40% | 500 | Moderately skewed — intermediate regime |
+| `NO_slv` | 50% | 200 | Moderately skewed — intermediate regime |
+| `NO_tra` | 35% | 200 | Near-symmetric (Gaussian-like) — low-to-moderate uncertainty |
+| `NO_wst` | 55% | 200 | Moderately skewed — intermediate regime |
+
+All distributions are centered near 1 (unbiased mean), with spread and skewness increasing with σ, consistent with the gamma distribution parameterization described in the [Mathematical Background](#mathematical-background) section.
+
 ## Emission Sectors
 
 The tool supports standard CEDS emission sectors
