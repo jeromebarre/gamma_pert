@@ -160,34 +160,23 @@ For emission perturbations, we require scaling factors with **mean = 1** and a s
 
 $$\mathbb{E}[X] = \alpha \theta$$
 $$\text{Var}(X) = \alpha \theta^2$$
-$$\text{Std}(X) = \sqrt{\alpha} \theta$$
 
 To achieve mean = 1 with standard deviation = $\sigma$, we solve:
 
 $$\alpha \theta = 1 \quad \text{(mean constraint)}$$
 $$\alpha \theta^2 = \sigma^2 \quad \text{(variance constraint)}$$
 
-Dividing the second equation by the first:
+which gives:
 
-$$\theta = \sigma^2$$
-
-Substituting back:
-
-$$\alpha = \frac{1}{\theta} = \frac{1}{\sigma^2}$$
-
-**Final parameterization:**
-
-$$\boxed{\alpha = \frac{1}{\sigma^2}, \quad \theta = \sigma^2}$$
-
-### Proof of Mean Conservation
+$$\alpha = \frac{1}{\sigma^2}, \quad \theta = \sigma^2$$
 
 With the derived parameters, the mean is:
 
-$$\mathbb{E}[X] = \alpha \theta = \frac{1}{\sigma^2} \cdot \sigma^2 = 1 \quad \checkmark$$
+$$\mathbb{E}[X] = \alpha \theta = \frac{1}{\sigma^2} \cdot \sigma^2 = 1$$
 
 And the variance is:
 
-$$\text{Var}(X) = \alpha \theta^2 = \frac{1}{\sigma^2} \cdot \sigma^4 = \sigma^2 \quad \checkmark$$
+$$\text{Var}(X) = \alpha \theta^2 = \frac{1}{\sigma^2} \cdot \sigma^4 = \sigma^2$$
 
 This ensures that:
 1. The **average perturbation factor is 1** (no systematic bias in emissions)
@@ -258,17 +247,43 @@ Both gamma and lognormal share key properties in this regime:
 
 ### Spatial Correlation
 
-The Gaussian smoothing kernel creates perturbations with approximate horizontal correlation length $L_h$:
+#### Correlation Length Conversion
 
-$$L_h \approx 2\sigma_{\text{kernel}}$$
+The horizontal correlation length is specified in **kilometers** in the YAML configuration (`sector hcor`). The code converts this to grid points using the equatorial Earth circumference:
 
-Where $\sigma_{\text{kernel}}$ is the standard deviation of the Gaussian kernel in grid points.
+$$\sigma_{\text{grid}} = \frac{L_h}{R_{\text{eq}}}$$
 
-The Gaussian kernel in 2D is:
+Where:
+- $L_h$ is the correlation length in km
+- $R_{\text{eq}} = 40075 / n_{\text{lon}}$ is the approximate grid resolution in km at the equator
+- $n_{\text{lon}}$ is the number of longitude grid points
+
+For example, with a 0.5° grid ($n_{\text{lon}} = 720$):
+- Grid resolution at equator: $R_{\text{eq}} \approx 55.7$ km
+- A 500 km correlation length → $\sigma_{\text{grid}} \approx 9$ grid points
+
+#### Gaussian Kernel Formulation
+
+The Gaussian smoothing kernel in 2D is:
 
 $$K(x, y) = \frac{1}{2\pi\sigma^2} \exp\left(-\frac{x^2 + y^2}{2\sigma^2}\right)$$
 
-The kernel is normalized ($\sum K = 1$) to preserve the mean of the perturbation field during convolution.
+The kernel is normalized ($\sum K = 1$) to preserve the mean of the perturbation field during convolution. The effective correlation length is approximately:
+
+$$L_h \approx 2\sigma_{\text{kernel}}$$
+
+#### ⚠️ Polar Singularity Limitation
+
+A kernel with fixed grid-point width represents a much smaller physical distance near the poles. A 500 km correlation at the equator becomes effectively ~250 km at 60°N/S and ~85 km at 80°N/S.
+
+For applications requiring strictly **uniform, isotropic spatial correlations** on the sphere, the **JEDI (Joint Effort for Data assimilation Integration)** framework, for example, provides more sophisticated tools.
+
+These tools could properly account for the spherical geometry and maintain isotropic correlation lengths regardless of latitude. However, they require:
+- Full JEDI software stack installation
+- Model interface implementation (e.g., FV3, MPAS, etc.)
+- More setup complexity
+
+For many practical applications**, especially in the tropics and mid-latitudes where most emissions occur, the simplified lat-lon approach in this tool provides adequate results with minimal setup overhead.
 
 ## Examples
 
@@ -310,15 +325,11 @@ The tool supports standard CEDS emission sectors:
 | `_tra` | Transportation |
 | `_wst` | Waste |
 
-## Limitations
+## Current Limitations
 
 - Currently only supports **global** domain (limited area domains not yet implemented)
 - Assumes **regular lat-lon grids**
 - Time dimension must be consistent across all input files
-
-## License
-
-This project is provided as-is for research purposes.
 
 ## Author
 

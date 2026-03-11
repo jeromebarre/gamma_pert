@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 #"""
-#Make some smooth noise...
+# Make some smooth noise...
 #"""
 
 import os
@@ -50,7 +50,6 @@ def BuildRandomSample(err,nlon,nlat,width) :
     y=np.arange(0,rnlon,float(rnlon)/nlon)[0:nlon]
     ry=np.arange(rnlon) 
 
-    xx,yy = np.meshgrid(rx,ry)  
     f = sp.interpolate.RectBivariateSpline(rx,ry,m,kx=1,ky=1)
     m = f(x,y)
 
@@ -169,11 +168,11 @@ def main():
       res = 40075 / nlon
       print(nlon,nlat)
 
-      # CHANGED: Instead of writing files each time, keep them in memory until all changes are done.
-      ds_dict = {}  # CHANGED: Dictionary to hold datasets in memory
+      # Instead of writing files each time, keep them in memory until all changes are done.
+      ds_dict = {}  # Dictionary to hold datasets in memory
 
-      # CHANGED: Load all datasets once before modifications
-      for spe, efile in zip(spelist, filenames):  # CHANGED: Moved this block before sector loop
+      # Load all datasets once before modifications
+      for spe, efile in zip(spelist, filenames):
           file_parts = efile.split('.')
           base_name = '.'.join(file_parts[:-1])
           extension = file_parts[-1]
@@ -200,7 +199,7 @@ def main():
             scal_fac_list.append(hour_field)
         scal_fac = np.float32(np.array(scal_fac_list))
 
-        # CHANGED: Apply changes to ds_dict datasets in memory
+        # Apply changes to ds_dict datasets in memory
         for spe, efile in zip(spelist,filenames):
             file_parts = efile.split('.')
             base_name = '.'.join(file_parts[:-1])
@@ -217,12 +216,12 @@ def main():
             else:
                 dsemi[var].values = dsemi[var].values * scal_fac
             if issfout:
-                # CHANGED: Just set variable here in memory
+                # Just set variable here in memory
                 dsemi[var+"_pert"] = ([timedim, geodims[1], geodims[0]], scal_fac)
 
             ds_dict[outfile] = dsemi
 
-      # CHANGED: After all modifications, write out once with compression
+      # After all modifications, write out once with compression
       for outfile, dsemi in ds_dict.items():
           encoding = {}
           for var_name in dsemi.data_vars:
@@ -230,7 +229,7 @@ def main():
                   encoding[var_name] = {'zlib': True, 'complevel': 5, 'shuffle': True, 'chunksizes': (24, 360, 180)}  # CHANGED: Apply compression here
 
           temp_outfile = outfile + '.tmp'
-          dsemi.to_netcdf(path=temp_outfile, encoding=encoding, mode='w')  # CHANGED: Single write with compression
+          dsemi.to_netcdf(path=temp_outfile, encoding=encoding, mode='w')
           dsemi.close()
           os.rename(temp_outfile, outfile)
 
