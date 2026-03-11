@@ -98,8 +98,8 @@ Samples from a gamma distribution with:
 - **Standard deviation = err** (specified perturbation magnitude)
 
 The gamma distribution naturally produces positive values, making it suitable for emission scaling factors. The shape transitions from:
-- **Gaussian-like** for low errors (< 0.3)
-- **Lognormal-like** for high errors (> 1.0)
+- **Gaussian-like** for low errors (< 30%)
+- **Lognormal-like** for high errors (> 100%)
 
 ### 2. Random Sample Generation (`BuildRandomSample`)
 
@@ -143,14 +143,118 @@ Output NetCDF files are compressed with:
 
 ## Mathematical Background
 
-### Perturbation Statistics
+### Gamma Distribution Formulation
 
-For a perturbation with relative error $\sigma$:
+The gamma distribution is a two-parameter family of continuous probability distributions. The probability density function (PDF) is:
 
-- **Shape parameter**: $\alpha = 1/\sigma^2$
-- **Scale parameter**: $\theta = \sigma^2$
-- **Mean**: $\mu = \alpha \cdot \theta = 1$
-- **Variance**: $\text{Var} = \alpha \cdot \theta^2 = \sigma^2$
+$$f(x; \alpha, \theta) = \frac{x^{\alpha-1} e^{-x/\theta}}{\theta^\alpha \Gamma(\alpha)}, \quad x > 0$$
+
+Where:
+- $\alpha > 0$ is the **shape parameter**
+- $\theta > 0$ is the **scale parameter**
+- $\Gamma(\alpha)$ is the gamma function
+
+### Parameterization for Unit Mean
+
+For emission perturbations, we require scaling factors with **mean = 1** and a specified **relative error** (standard deviation) $\sigma$. The gamma distribution moments are:
+
+$$\mathbb{E}[X] = \alpha \theta$$
+$$\text{Var}(X) = \alpha \theta^2$$
+$$\text{Std}(X) = \sqrt{\alpha} \theta$$
+
+To achieve mean = 1 with standard deviation = $\sigma$, we solve:
+
+$$\alpha \theta = 1 \quad \text{(mean constraint)}$$
+$$\alpha \theta^2 = \sigma^2 \quad \text{(variance constraint)}$$
+
+Dividing the second equation by the first:
+
+$$\theta = \sigma^2$$
+
+Substituting back:
+
+$$\alpha = \frac{1}{\theta} = \frac{1}{\sigma^2}$$
+
+**Final parameterization:**
+
+$$\boxed{\alpha = \frac{1}{\sigma^2}, \quad \theta = \sigma^2}$$
+
+### Proof of Mean Conservation
+
+With the derived parameters, the mean is:
+
+$$\mathbb{E}[X] = \alpha \theta = \frac{1}{\sigma^2} \cdot \sigma^2 = 1 \quad \checkmark$$
+
+And the variance is:
+
+$$\text{Var}(X) = \alpha \theta^2 = \frac{1}{\sigma^2} \cdot \sigma^4 = \sigma^2 \quad \checkmark$$
+
+This ensures that:
+1. The **average perturbation factor is 1** (no systematic bias in emissions)
+2. The **spread is controlled by the specified error** $\sigma$
+
+### Gaussian Approximation (Low Error Regime)
+
+For **small errors** ($\sigma < 0.3$), the shape parameter $\alpha = 1/\sigma^2$ becomes large:
+
+| $\sigma$ | $\alpha$ |
+|----------|----------|
+| 0.1 | 100 |
+| 0.2 | 25 |
+| 0.3 | 11.1 |
+
+By the **Central Limit Theorem**, as $\alpha \to \infty$, the gamma distribution converges to a Gaussian:
+
+$$\text{Gamma}(\alpha, \theta) \xrightarrow{\alpha \to \infty} \mathcal{N}(\alpha\theta, \alpha\theta^2) = \mathcal{N}(1, \sigma^2)$$
+
+The **skewness** of the gamma distribution is:
+
+$$\gamma_1 = \frac{2}{\sqrt{\alpha}} = 2\sigma$$
+
+For $\sigma = 0.1$: skewness = 0.2 (nearly symmetric, Gaussian-like)
+For $\sigma = 0.3$: skewness = 0.6 (slightly asymmetric)
+
+### Lognormal Approximation (High Error Regime)
+
+For **large errors** ($\sigma > 1.0$), the shape parameter $\alpha = 1/\sigma^2$ becomes small:
+
+| $\sigma$ | $\alpha$ |
+|----------|----------|
+| 1.0 | 1.0 |
+| 1.5 | 0.44 |
+| 2.0 | 0.25 |
+
+When $\alpha < 1$, the gamma PDF has an asymptote at $x = 0$ and exhibits heavy right-skewness, similar to a lognormal distribution.
+
+The lognormal distribution $\text{LogNormal}(\mu_{\ln}, \sigma_{\ln})$ has:
+
+$$\mathbb{E}[X] = e^{\mu_{\ln} + \sigma_{\ln}^2/2}$$
+$$\text{Var}(X) = (e^{\sigma_{\ln}^2} - 1) e^{2\mu_{\ln} + \sigma_{\ln}^2}$$
+
+For a lognormal with mean = 1 and variance = $\sigma^2$:
+
+$$\mu_{\ln} = -\frac{1}{2}\ln(1 + \sigma^2)$$
+$$\sigma_{\ln} = \sqrt{\ln(1 + \sigma^2)}$$
+
+Both gamma and lognormal share key properties in this regime:
+- **Strictly positive** values (essential for emission scaling)
+- **Heavy right tail** (allows large positive perturbations)
+- **Mode < Mean < Median** ordering
+
+### Distribution Shape Summary
+
+| Error Regime | $\sigma$ | $\alpha$ | Skewness | Distribution Shape |
+|--------------|----------|----------|----------|-------------------|
+| Low | < 0.3 | > 11 | < 0.6 | ≈ Gaussian (symmetric) |
+| Medium | 0.3 - 1.0 | 1 - 11 | 0.6 - 2.0 | Intermediate |
+| High | > 1.0 | < 1 | > 2.0 | ≈ Lognormal (right-skewed) |
+
+### Why Gamma Over Gaussian or Lognormal?
+
+1. **Always positive**: Unlike Gaussian, gamma never produces negative scaling factors
+2. **Flexible shape**: Single parameterization smoothly transitions between Gaussian-like and lognormal-like
+3. **Simple mean control**: Easy to ensure mean = 1 for unbiased perturbations
+4. **Computational efficiency**: Direct sampling without rejection or transformation
 
 ### Spatial Correlation
 
@@ -159,6 +263,12 @@ The Gaussian smoothing kernel creates perturbations with approximate horizontal 
 $$L_h \approx 2\sigma_{\text{kernel}}$$
 
 Where $\sigma_{\text{kernel}}$ is the standard deviation of the Gaussian kernel in grid points.
+
+The Gaussian kernel in 2D is:
+
+$$K(x, y) = \frac{1}{2\pi\sigma^2} \exp\left(-\frac{x^2 + y^2}{2\sigma^2}\right)$$
+
+The kernel is normalized ($\sum K = 1$) to preserve the mean of the perturbation field during convolution.
 
 ## Examples
 
@@ -217,4 +327,3 @@ Jerome Barre
 ## References
 
 - CEDS (Community Emissions Data System): https://github.com/JGCRI/CEDS
-- Gamma distribution for emission uncertainties: Various atmospheric chemistry data assimilation literature
