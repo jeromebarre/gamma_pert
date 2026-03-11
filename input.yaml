@@ -1,0 +1,11 @@
+emission file: NOx_anthro_CEDS_2019_reduced.nc
+sector list: [NOx_agr, NOx_ene, NOx_ind, NOx_rco, NOx_shp, NOx_slv, NOx_tra, NOx_wst]
+sector pert: [1.5,     0.5,     0.5,     0.75,    0.75,    0.5,     1.0,     0.4] #relative not %
+sector hcor: [250,     250,     250,     250,     1000,    250,     250,     250] # in km
+geo dims: [lon, lat] # should be lon and lat NOT lat and lon
+time dim: time
+members: 5
+scaling factors out: True
+inpath: /discover/nobackup/jbarre/jedidev/gamma_pert/
+outpath: /discover/nobackup/jbarre/jedidev/gamma_pert/out/
+domain: global 
