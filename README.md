@@ -33,7 +33,7 @@ The **Perturbator** tool (`gamma_pert.py`) creates smooth, spatially-correlated 
 ### Dependencies
 
 ```bash
-pip install numpy scipy xarray pyyaml
+pip install numpy scipy xarray pyyaml netCDF4
 ```
 
 ### Required Python packages:
@@ -41,6 +41,7 @@ pip install numpy scipy xarray pyyaml
 - `scipy` - Signal processing and interpolation
 - `xarray` - NetCDF file handling
 - `pyyaml` - YAML configuration parsing
+- `netCDF4` - netcdf library
 
 ## Usage
 
@@ -55,6 +56,20 @@ python gamma_pert.py -i input.yaml
 | Argument | Description |
 |----------|-------------|
 | `-i`, `--yaml_file` | **Required.** Path to the YAML configuration file |
+
+### Quick Test
+
+A reduced-resolution test case is included in the repository and can be run immediately:
+
+```bash
+python gamma_pert.py -i input.yaml
+```
+
+This uses `NOx_anthro_CEDS_2019_reduced.nc` (a 360×180 global grid) and generates 3 ensemble members. Output files `NOx_anthro_CEDS_2019_reduced_pert001.nc`, `_pert002.nc`, `_pert003.nc` will be written to the current directory.
+
+Two additional YAML files are provided as **reference configurations** for production use on full-resolution CEDS grids but require access to the corresponding input files:
+- `input_CEDS_NO.yaml` — monthly 3600×1800 CEDS emissions for NO, CO, CH2O (32 members)
+- `input_CEDS_NO_hourly.yaml` — hourly 720×360 CEDS emissions for NO, CO, CH2O (32 members)
 
 ## Configuration
 

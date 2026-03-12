@@ -224,7 +224,11 @@ def main():
           encoding = {}
           for var_name in dsemi.data_vars:
               if issfout or var_name not in [f'{spe}{sec}' for spe in spelist for sec in seclist if pertoly]:
-                  encoding[var_name] = {'zlib': True, 'complevel': 5, 'shuffle': True, 'chunksizes': (24, 360, 180)}  # CHANGED: Apply compression here
+                  var_dims = dsemi[var_name].dims
+                  var_shape = dsemi[var_name].shape
+                  # Clamp each chunk size to the actual dimension size to avoid netCDF4 errors
+                  chunks = [min(c, s) for c, s in zip((24, 360, 180), var_shape)]
+                  encoding[var_name] = {'zlib': True, 'complevel': 5, 'shuffle': True, 'chunksizes': tuple(chunks)}
 
           temp_outfile = outfile + '.tmp'
           dsemi.to_netcdf(path=temp_outfile, encoding=encoding, mode='w')
